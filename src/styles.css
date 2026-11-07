@@ -1,0 +1,336 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+  --color-paper: #f3eee4;
+  --color-ink: #1c1814;
+  --color-muted: #6e655c;
+  --color-line: #e3d9c8;
+  --color-card: #fffdf8;
+  --color-stamp: #b45309;
+  --color-stamp-soft: #f4e6d2;
+  --radius-card: 0.75rem;
+  --radius-plaque: 0.42rem;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Raised nameplate controls. Hover lifts; press and hold sinks in. */
+.plaque,
+.plaque-seg,
+.plaque-text {
+  border-radius: var(--radius-plaque);
+  transition:
+    box-shadow 160ms ease,
+    transform 140ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.plaque {
+  border: 1px solid color-mix(in srgb, var(--color-ink) 16%, var(--color-line));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, white 78%, var(--color-card)) 0%,
+    var(--color-card) 42%,
+    color-mix(in srgb, var(--color-line) 78%, var(--color-card)) 100%
+  );
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 1px 0 rgb(255 253 248 / 0.96),
+    inset 0 -1px 0 rgb(28 24 20 / 0.1),
+    0 1px 0 rgb(255 253 248 / 0.7),
+    0 2px 3px rgb(28 24 20 / 0.08);
+}
+
+.plaque:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-ink) 32%, var(--color-line));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.98),
+    inset 0 -1px 0 rgb(28 24 20 / 0.05),
+    0 1px 0 rgb(255 253 248 / 0.85),
+    0 3px 8px rgb(28 24 20 / 0.1);
+}
+
+.plaque:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-line) 88%, var(--color-paper)),
+    color-mix(in srgb, var(--color-card) 55%, var(--color-line))
+  );
+  box-shadow:
+    inset 0 2px 4px rgb(28 24 20 / 0.28),
+    inset 0 1px 0 rgb(28 24 20 / 0.12);
+}
+
+.plaque:disabled {
+  opacity: 0.4;
+  transform: none;
+}
+
+.plaque:focus-visible,
+.plaque-seg:focus-visible,
+.plaque-text:focus-visible,
+.plaque-field:focus-visible {
+  outline: 2px solid var(--color-stamp);
+  outline-offset: 2px;
+}
+
+.plaque-ink {
+  border-color: color-mix(in srgb, var(--color-ink) 72%, black);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-ink) 72%, white) 0%,
+    var(--color-ink) 54%,
+    color-mix(in srgb, var(--color-ink) 78%, black) 100%
+  );
+  color: var(--color-paper);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 1px 2px rgb(28 24 20 / 0.22);
+}
+
+.plaque-ink:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-ink) 55%, black);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.26),
+    0 4px 12px rgb(28 24 20 / 0.2);
+}
+
+.plaque-ink:active:not(:disabled) {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-ink) 62%, black),
+    color-mix(in srgb, var(--color-ink) 90%, white)
+  );
+  color: var(--color-paper);
+  box-shadow:
+    inset 0 2px 5px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(0 0 0 / 0.35);
+}
+
+.plaque-stamp {
+  border-color: color-mix(in srgb, var(--color-stamp) 72%, black);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-stamp) 78%, white) 0%,
+    var(--color-stamp) 52%,
+    color-mix(in srgb, var(--color-stamp) 78%, black) 100%
+  );
+  color: var(--color-card);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.32),
+    0 1px 2px rgb(120 53 15 / 0.22);
+}
+
+.plaque-stamp:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.4),
+    0 4px 12px rgb(120 53 15 / 0.22);
+}
+
+.plaque-stamp:active:not(:disabled) {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-stamp) 62%, black),
+    color-mix(in srgb, var(--color-stamp) 88%, white)
+  );
+  color: var(--color-card);
+  box-shadow:
+    inset 0 2px 5px rgb(70 24 0 / 0.5),
+    inset 0 1px 0 rgb(70 24 0 / 0.28);
+}
+
+.plaque-quiet {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.plaque-quiet:hover:not(:disabled) {
+  border-color: var(--color-line);
+  background: var(--color-card);
+  box-shadow:
+    inset 0 1px 0 rgb(255 253 248 / 0.9),
+    0 1px 2px rgb(28 24 20 / 0.05);
+}
+
+.plaque-quiet:active:not(:disabled) {
+  border-color: var(--color-line);
+  background: color-mix(in srgb, var(--color-line) 70%, var(--color-card));
+  box-shadow: inset 0 1px 2px rgb(28 24 20 / 0.16);
+}
+
+.plaque-tray {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 2px;
+  overflow-x: auto;
+  border-radius: calc(var(--radius-plaque) + 3px);
+  background: color-mix(in srgb, var(--color-line) 78%, var(--color-paper));
+  padding: 3px;
+  box-shadow: inset 0 1px 2px rgb(28 24 20 / 0.08);
+}
+
+.plaque-seg {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  box-shadow: none;
+}
+
+.plaque-seg:hover:not(:disabled):not(.plaque-seg-on) {
+  background: color-mix(in srgb, var(--color-card) 72%, transparent);
+  color: var(--color-ink);
+}
+
+.plaque-seg-on {
+  border-color: color-mix(in srgb, var(--color-stamp) 24%, var(--color-line));
+  background: linear-gradient(
+    180deg,
+    var(--color-card),
+    color-mix(in srgb, var(--color-stamp-soft) 70%, var(--color-card))
+  );
+  color: var(--color-stamp);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.85),
+    0 1px 1px rgb(28 24 20 / 0.06);
+}
+
+.plaque-seg:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgb(28 24 20 / 0.22);
+}
+
+.plaque-field {
+  border-radius: var(--radius-plaque);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 12%, var(--color-line));
+  background: var(--color-card);
+  color: var(--color-ink);
+  box-shadow: inset 0 1px 2px rgb(28 24 20 / 0.06);
+  transition:
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.plaque-field:hover {
+  border-color: color-mix(in srgb, var(--color-ink) 24%, var(--color-line));
+}
+
+.plaque-field:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--color-stamp) 55%, var(--color-line));
+  box-shadow:
+    inset 0 1px 2px rgb(28 24 20 / 0.08),
+    0 0 0 3px color-mix(in srgb, var(--color-stamp) 20%, transparent);
+}
+
+.plaque-text {
+  margin: -0.2rem -0.35rem;
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0.35rem;
+  color: inherit;
+}
+
+.plaque-text:hover {
+  background: var(--color-stamp-soft);
+  box-shadow: inset 0 1px 0 rgb(255 253 248 / 0.8);
+}
+
+.sheet-grid:focus {
+  outline: none;
+}
+
+.sheet-on {
+  background: color-mix(in srgb, var(--color-stamp-soft) 65%, var(--color-card));
+  box-shadow: inset 0 0 0 2px var(--color-stamp);
+}
+
+.sheet-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.sheet-gutter {
+  width: 2.75rem;
+  color: var(--color-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.sheet-row-x {
+  border: 0;
+  background: transparent;
+  color: var(--color-stamp);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.plaque-text:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgb(28 24 20 / 0.16);
+}
+
+.plaque-mark {
+  border-radius: var(--radius-plaque);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 1px 2px rgb(28 24 20 / 0.24);
+}
+
+.plaque-meter {
+  height: 0.3rem;
+  width: 12rem;
+  overflow: hidden;
+  border-radius: 0.2rem;
+  background: var(--color-line);
+  box-shadow: inset 0 1px 2px rgb(28 24 20 / 0.12);
+}
