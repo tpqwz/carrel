@@ -22,7 +22,7 @@ import {
   Table2,
   Upload,
 } from "lucide-react";
-import { createDatabase, currentDatabase, getSession, listDatabases, openDatabase, resetSession, type CatalogDb, type QueryResult } from "@/lib/engine";
+import { adoptDatabase, createDatabase, currentDatabase, getSession, listDatabases, openDatabase, removeDatabase, renameDatabase, resetSession, type CatalogDb, type QueryResult } from "@/lib/engine";
 import { importSqlite } from "@/lib/sqlite";
 import { CANNED, SAMPLE_DATABASES } from "@/lib/samples";
 import { bindNamed, cellText, isNumericType, looksLikeJson, lit, namedParams, qid, safeName, splitSql, valueSql } from "@/lib/sql";
@@ -38,6 +38,10 @@ type TableNotes = { about: string; source: string; license: string };
 type ForeignKey = { column: string; table: string };
 type SavedQuery = { name: string; sql: string };
 type HistoryItem = { at: string; sql: string; ok: boolean };
+type UndoEntry =
+  | { kind: "cell"; table: string; rowid: number; column: string; previous: string }
+  | { kind: "delete"; table: string; values: Record<string, string> }
+  | { kind: "insert"; table: string; rowid: number };
 type ColumnProfile = {
   column: string;
   type: string;
@@ -74,6 +78,8 @@ export function Desk() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [confirmDrop, setConfirmDrop] = useState(false);
   const [shape, setShape] = useState<"grid" | "json">("grid");
+  const [undoCount, setUndoCount] = useState(0);
+  const undoRef = useRef<UndoEntry[]>([]);
   const [queryName, setQueryName] = useState("");
   const [inspect, setInspect] = useState<string | null>(null);
   const [profile, setProfile] = useState<ColumnProfile | null>(null);
@@ -89,6 +95,9 @@ export function Desk() {
   const [databases, setDatabases] = useState<CatalogDb[]>(() => listDatabases());
   const [activeDb, setActiveDb] = useState(() => currentDatabase().id);
   const [dbName, setDbName] = useState("");
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [sqlWriting, setSqlWriting] = useState(false);
   const [allowEdit, setAllowEdit] = useState(() => {
@@ -622,15 +631,61 @@ export function Desk() {
     }
   }
 
+  function renameDesk(id: string) {
+    try {
+      const items = renameDatabase(id, renameValue);
+      setDatabases(items);
+      setRenameId(null);
+      setNotice("Renamed.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not rename that database.");
+    }
+  }
+
+  async function removeDesk(id: string) {
+    if (confirmRemove !== id) {
+      setConfirmRemove(id);
+      setRenameId(null);
+      return;
+    }
+    const wasActive = activeDb === id;
+    if (wasActive) setPhase("boot");
+    try {
+      const items = await removeDatabase(id);
+      setDatabases(items);
+      setConfirmRemove(null);
+      if (wasActive) {
+        setActiveDb(items[0].id);
+        await refreshTables();
+        await loadSaved();
+        await loadHistory();
+        setPhase("ready");
+      }
+      setNotice("Removed from this browser.");
+      setView("settings");
+    } catch (err) {
+      if (wasActive) setPhase("ready");
+      setNotice(err instanceof Error ? err.message : "Could not remove that database.");
+    }
+  }
+
+  function pushUndo(entry: UndoEntry) {
+    undoRef.current = [...undoRef.current, entry].slice(-40);
+    setUndoCount(undoRef.current.length);
+  }
+
   async function commitCell(rowid: number, column: string, text: string) {
     if (!meta) return;
     const type = meta.columns.find((item) => item.name === column)?.type ?? "";
+    const previous = cellText(grid?.rows.find((row) => Number(row._rowid) === rowid)?.[column]);
+    if (previous === text) return;
     try {
       const session = await getSession();
       await session.query(
         `UPDATE ${qid(meta.name)} SET ${qid(column)} = ${valueSql(text, type)} WHERE rowid = ${rowid}`,
       );
       await session.checkpoint();
+      pushUndo({ kind: "cell", table: meta.name, rowid, column, previous });
       setGrid((current) => {
         if (!current) return current;
         return {
@@ -647,9 +702,15 @@ export function Desk() {
 
   async function deleteRow(rowid: number) {
     if (!meta) return;
+    const source = grid?.rows.find((row) => Number(row._rowid) === rowid);
+    const values: Record<string, string> = {};
+    if (source) {
+      for (const column of meta.columns) values[column.name] = cellText(source[column.name]);
+    }
     const session = await getSession();
     await session.query(`DELETE FROM ${qid(meta.name)} WHERE rowid = ${rowid}`);
     await session.checkpoint();
+    if (source) pushUndo({ kind: "delete", table: meta.name, values });
     setOpenRow(null);
     await refreshTables(table);
   }
@@ -659,11 +720,59 @@ export function Desk() {
     const cols = meta.columns.map((column) => qid(column.name)).join(", ");
     const values = meta.columns.map(() => "NULL").join(", ");
     const session = await getSession();
-    await session.query(`INSERT INTO ${qid(meta.name)} (${cols}) VALUES (${values})`);
+    const inserted = await session.query(
+      `INSERT INTO ${qid(meta.name)} (${cols}) VALUES (${values}) RETURNING rowid`,
+    );
     await session.checkpoint();
+    const rowid = Number(inserted.rows[0]?.rowid);
+    if (Number.isFinite(rowid)) pushUndo({ kind: "insert", table: meta.name, rowid });
     setPage(0);
     await refreshTables(table);
   }
+
+  async function undoLast() {
+    const entry = undoRef.current[undoRef.current.length - 1];
+    if (!entry) return;
+    undoRef.current = undoRef.current.slice(0, -1);
+    setUndoCount(undoRef.current.length);
+    const owner = tables.find((item) => item.name === entry.table);
+    const session = await getSession();
+    try {
+      if (entry.kind === "cell") {
+        const type = owner?.columns.find((column) => column.name === entry.column)?.type ?? "";
+        await session.query(
+          `UPDATE ${qid(entry.table)} SET ${qid(entry.column)} = ${valueSql(entry.previous, type)} WHERE rowid = ${entry.rowid}`,
+        );
+      } else if (entry.kind === "insert") {
+        await session.query(`DELETE FROM ${qid(entry.table)} WHERE rowid = ${entry.rowid}`);
+      } else if (owner) {
+        const names = owner.columns.map((column) => qid(column.name)).join(", ");
+        const values = owner.columns
+          .map((column) => valueSql(entry.values[column.name] ?? "", column.type))
+          .join(", ");
+        await session.query(`INSERT INTO ${qid(entry.table)} (${names}) VALUES (${values})`);
+      }
+      await session.checkpoint();
+      if (entry.table === table) await refreshTables(table);
+      setNotice("Undid the last edit.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not undo that edit.");
+    }
+  }
+
+  useEffect(() => {
+    if (!allowEdit || !editing) return;
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z" || event.shiftKey) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      if (undoRef.current.length === 0) return;
+      event.preventDefault();
+      void undoLast();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   async function createTable() {
     const defs = newColumns
@@ -761,6 +870,24 @@ export function Desk() {
     download(`${stem}.csv`, new Blob([lines.join("\n")], { type: "text/csv" }));
   }
 
+  async function downloadDatabase() {
+    setBusy(true);
+    setNotice("Packing the database…");
+    try {
+      const session = await getSession();
+      const bytes = await session.exportBytes();
+      const name = currentDatabase().name.replace(/[^\w.-]+/g, "_") || "carrel";
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      download(`${name}.duckdb`, new Blob([copy], { type: "application/octet-stream" }));
+      setNotice(`Downloaded ${name}.duckdb. Open it in another Carrel.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not download that database.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function ingest(file: File) {
     setNotice(`Reading ${file.name}…`);
     setBusy(true);
@@ -768,6 +895,19 @@ export function Desk() {
       const session = await getSession();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (ext === "duckdb" || isDuckDb(bytes)) {
+        setPhase("boot");
+        const created = await adoptDatabase(fileTitle(file.name), bytes);
+        setActiveDb(created.id);
+        setDatabases(listDatabases());
+        await refreshTables();
+        await loadSaved();
+        await loadHistory();
+        setNotice(`Opened ${created.name}.`);
+        setPhase("ready");
+        setView("browse");
+        return;
+      }
       if (ext === "db" || ext === "sqlite" || ext === "sqlite3") {
         const created = await importSqlite(bytes, (sql) => session.query(sql), new Set(tables.map((item) => item.name)));
         await session.checkpoint();
@@ -795,6 +935,7 @@ export function Desk() {
       setNotice(`Loaded ${file.name} as ${base}.`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Could not read that file.");
+      setPhase((current) => (current === "boot" ? "ready" : current));
     } finally {
       setBusy(false);
     }
@@ -896,7 +1037,7 @@ export function Desk() {
               <input
                 className="sr-only"
                 type="file"
-                accept=".csv,.tsv,.json,.parquet,.pq,.db,.sqlite,.sqlite3"
+                accept=".csv,.tsv,.json,.parquet,.pq,.db,.sqlite,.sqlite3,.duckdb"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) void ingest(file);
@@ -904,6 +1045,13 @@ export function Desk() {
                 }}
               />
             </label>
+            <button
+              onClick={() => void downloadDatabase()}
+              className="plaque inline-flex min-h-11 items-center gap-2 px-4 text-sm"
+            >
+              <Download className="size-4" />
+              Download
+            </button>
           </div>
         </div>
       </header>
@@ -1020,7 +1168,16 @@ export function Desk() {
                 </button>
               ) : null}
               {allowEdit && editing ? (
-                <p className="text-sm text-muted">Click a cell. Type, or press Enter. Arrows move.</p>
+                <p className="text-sm text-muted">Click a cell. Type, or press Enter. Ctrl+Z undoes.</p>
+              ) : null}
+              {allowEdit && editing ? (
+                <button
+                  onClick={() => void undoLast()}
+                  disabled={undoCount === 0}
+                  className="plaque min-h-11 px-4 text-sm"
+                >
+                  Undo
+                </button>
               ) : null}
               {allowEdit && editing ? (
                 <button onClick={() => void addRow()} className="plaque min-h-11 px-4 text-sm">
@@ -1487,15 +1644,51 @@ export function Desk() {
                 {databases.map((item) => {
                   const sample = SAMPLE_DATABASES.find((sampleItem) => sampleItem.id === item.id);
                   return (
-                    <li key={item.id} className="flex flex-wrap items-center gap-3">
-                      <button
-                        onClick={() => void restartOn(item.id)}
-                        className={
-                          "plaque min-h-11 px-4 text-sm " + (item.id === activeDb ? "plaque-ink" : "")
-                        }
-                      >
-                        {item.name}
-                      </button>
+                    <li key={item.id} className="flex flex-wrap items-center gap-2">
+                      {renameId === item.id ? (
+                        <>
+                          <input
+                            value={renameValue}
+                            onChange={(event) => setRenameValue(event.target.value)}
+                            className="plaque-field min-h-11 w-44 px-3 text-sm"
+                          />
+                          <button onClick={() => renameDesk(item.id)} className="plaque plaque-ink min-h-11 px-4 text-sm">
+                            Save
+                          </button>
+                          <button onClick={() => setRenameId(null)} className="plaque min-h-11 px-4 text-sm">
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => void restartOn(item.id)}
+                            className={
+                              "plaque min-h-11 px-4 text-sm " + (item.id === activeDb ? "plaque-ink" : "")
+                            }
+                          >
+                            {item.name}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRenameId(item.id);
+                              setRenameValue(item.name);
+                              setConfirmRemove(null);
+                            }}
+                            className="plaque min-h-11 px-4 text-sm"
+                          >
+                            Rename
+                          </button>
+                          {databases.length > 1 ? (
+                            <button
+                              onClick={() => void removeDesk(item.id)}
+                              className="plaque min-h-11 px-4 text-sm"
+                            >
+                              {confirmRemove === item.id ? "Remove it" : "Remove"}
+                            </button>
+                          ) : null}
+                        </>
+                      )}
                       <span className="text-sm text-muted">{sample?.about ?? "Created in this browser."}</span>
                     </li>
                   );
@@ -1994,6 +2187,21 @@ function FilterBar({
         Filter
       </button>
     </>
+  );
+}
+
+function fileTitle(name: string): string {
+  const stem = name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  return stem || "Imported";
+}
+
+function isDuckDb(bytes: Uint8Array): boolean {
+  return (
+    bytes.length > 12 &&
+    bytes[8] === 0x44 &&
+    bytes[9] === 0x55 &&
+    bytes[10] === 0x43 &&
+    bytes[11] === 0x4b
   );
 }
 
