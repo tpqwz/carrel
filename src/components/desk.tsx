@@ -18,6 +18,7 @@ import {
   Download,
   Map as MapIcon,
   Play,
+  Save,
   Settings,
   Table2,
   Upload,
@@ -880,9 +881,9 @@ export function Desk() {
       const copy = new Uint8Array(bytes.byteLength);
       copy.set(bytes);
       download(`${name}.duckdb`, new Blob([copy], { type: "application/octet-stream" }));
-      setNotice(`Downloaded ${name}.duckdb. Open it in another Carrel.`);
+      setNotice(`Saved ${name}.duckdb. Open it in another Carrel.`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Could not download that database.");
+      setNotice(err instanceof Error ? err.message : "Could not save that database.");
     } finally {
       setBusy(false);
     }
@@ -1049,8 +1050,8 @@ export function Desk() {
               onClick={() => void downloadDatabase()}
               className="plaque inline-flex min-h-11 items-center gap-2 px-4 text-sm"
             >
-              <Download className="size-4" />
-              Download
+              <Save className="size-4" />
+              Save
             </button>
           </div>
         </div>

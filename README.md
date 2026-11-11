@@ -12,7 +12,7 @@ Carrel is not a copy of [Datasette](https://datasette.io). It is a separate prog
 - Create an empty database, rename it, or remove it from the list. Switch among the desks that ship with the app: Carrel, Bindery, Observatory, and Ledger.
 - Chart a pair of columns, and map a table that has latitude and longitude.
 - Export or copy the page you are looking at, or view that page as JSON.
-- Download the whole database as a `.duckdb` file and open that file in another Carrel.
+- Save the whole database as a `.duckdb` file and open that file in another Carrel.
 - Undo a cell edit, a new row, or a deleted row with Undo or Ctrl+Z.
 - Install it as a progressive web app.
 
