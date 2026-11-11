@@ -82,6 +82,7 @@ export function Desk() {
   const [undoCount, setUndoCount] = useState(0);
   const undoRef = useRef<UndoEntry[]>([]);
   const [queryName, setQueryName] = useState("");
+  const [keptSql, setKeptSql] = useState("");
   const [inspect, setInspect] = useState<string | null>(null);
   const [profile, setProfile] = useState<ColumnProfile | null>(null);
   const [busy, setBusy] = useState(false);
@@ -297,6 +298,10 @@ export function Desk() {
         const rows = await session.query(
           `SELECT about, source, license FROM _desk_notes WHERE table_name = ${lit(table)}`,
         );
+        await session.query(
+          `CREATE TABLE IF NOT EXISTS _desk_kept (table_name VARCHAR PRIMARY KEY, sql VARCHAR)`,
+        );
+        const kept = await session.query(`SELECT sql FROM _desk_kept WHERE table_name = ${lit(table)}`);
         if (!live) return;
         const row = rows.rows[0];
         setNotes({
@@ -304,6 +309,7 @@ export function Desk() {
           source: cellText(row?.source),
           license: cellText(row?.license),
         });
+        setKeptSql(cellText(kept.rows[0]?.sql));
         try {
           const keys = await session.query(
             `SELECT constraint_text FROM duckdb_constraints()
@@ -481,6 +487,60 @@ export function Desk() {
     }
   }
 
+  async function keepResult() {
+    const statements = splitSql(bindNamed(sql, params));
+    const statement = statements[statements.length - 1] ?? "";
+    if (!sqlResult || !/^(select|with|from|values|table)\b/i.test(statement.trim())) {
+      setNotice("Run a SELECT, then keep that result.");
+      return;
+    }
+    const stem = safeName(queryName.trim() || "result");
+    const taken = new Set(tables.map((item) => item.name));
+    let name = stem;
+    let n = 2;
+    while (taken.has(name)) {
+      name = `${stem}_${n}`.slice(0, 48);
+      n += 1;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      const session = await getSession();
+      await session.query(`CREATE TABLE ${qid(name)} AS ${statement}`);
+      await session.query(
+        `CREATE TABLE IF NOT EXISTS _desk_kept (table_name VARCHAR PRIMARY KEY, sql VARCHAR)`,
+      );
+      await session.query(`DELETE FROM _desk_kept WHERE table_name = ${lit(name)}`);
+      await session.query(`INSERT INTO _desk_kept VALUES (${lit(name)}, ${lit(statement)})`);
+      await session.checkpoint();
+      setKeptSql(statement);
+      await refreshTables(name);
+      setView("browse");
+      setNotice(`Kept this result as ${name}.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not keep that result.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshKept() {
+    if (!meta || !keptSql) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const session = await getSession();
+      await session.query(`CREATE OR REPLACE TABLE ${qid(meta.name)} AS ${keptSql}`);
+      await session.checkpoint();
+      await refreshTables(meta.name);
+      setNotice(`Refreshed ${meta.name}.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not refresh that table.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadSaved() {
     const session = await getSession();
     await session.query(
@@ -571,6 +631,10 @@ export function Desk() {
     }
     const session = await getSession();
     await session.query(`DROP TABLE ${qid(name)}`);
+    await session.query(
+      `CREATE TABLE IF NOT EXISTS _desk_kept (table_name VARCHAR PRIMARY KEY, sql VARCHAR)`,
+    );
+    await session.query(`DELETE FROM _desk_kept WHERE table_name = ${lit(name)}`);
     await session.checkpoint();
     setConfirmDrop(false);
     setOpenRow(null);
@@ -1353,6 +1417,16 @@ export function Desk() {
               </div>
             ) : null}
             <div className="order-first min-h-[50vh] overflow-auto">
+            {keptSql ? (
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <p className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={keptSql}>
+                  {keptSql}
+                </p>
+                <button onClick={() => void refreshKept()} className="plaque min-h-11 shrink-0 px-4 text-sm">
+                  Refresh
+                </button>
+              </div>
+            ) : null}
             {notes.about || notes.source || notes.license ? (
               <p className="mb-2 text-sm text-muted">
                 {[notes.about, notes.source, notes.license].filter(Boolean).join(" · ")}
@@ -1571,6 +1645,14 @@ export function Desk() {
                 className="plaque inline-flex min-h-11 items-center px-4 text-sm"
               >
                 Save
+              </button>
+              <button
+                onClick={() => void keepResult()}
+                disabled={!sqlResult}
+                title="Store these rows as a table. Uses the name, or result."
+                className="plaque inline-flex min-h-11 items-center px-4 text-sm"
+              >
+                Keep result
               </button>
               <button
                 onClick={() => void exportRows("csv")}

@@ -7,7 +7,7 @@ Carrel is not a copy of [Datasette](https://datasette.io). It is a separate prog
 ## What you can do
 
 - Browse tables, filter them, and open a row.
-- Run SQL, including saved queries and named parameters such as `:city`.
+- Run SQL, including saved queries and named parameters such as `:city`. Keep a result as a table, and refresh that table from the same query.
 - Turn on editing in Settings, then change cells in the grid the way you would in a spreadsheet, or insert, update, and delete from SQL.
 - Create an empty database, rename it, or remove it from the list. Switch among the desks that ship with the app: Carrel, Bindery, Observatory, and Ledger.
 - Chart a pair of columns, and map a table that has latitude and longitude.
